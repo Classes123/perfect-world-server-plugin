@@ -1,0 +1,21 @@
+[constants]
+cpu = 'x86_64'
+force_arch = '-m64'
+clang_version = '14'
+
+[host_machine]
+system = 'linux'
+cpu = cpu
+cpu_family = cpu
+endian = 'little'
+
+[binaries]
+c = 'clang-' + clang_version
+cpp = 'clang++-' + clang_version
+strip = 'llvm-strip-' + clang_version
+
+[built-in options]
+c_args = force_arch
+cpp_args = force_arch
+c_link_args = force_arch
+cpp_link_args = force_arch
