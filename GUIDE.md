@@ -210,7 +210,7 @@ LD_PRELOAD="./plugin.so" ./gs <...>
 ```
 
 Зайдем на сервер и откроем сундук: \
-![image](https://github.com/user-attachments/assets/c27498a5-d366-4e0c-ae3e-a6a79c18a67d)
+![image](https://github.com/user-attachments/assets/9874ddf4-939a-4bc2-8503-25da28986d5f)
 
 Все работает так, как и задумывалось.
 
