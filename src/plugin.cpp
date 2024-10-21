@@ -1,102 +1,77 @@
-#include "libs.h"                   // обертка вокруг libsigcan и libdetour
-#include "sdk/cnet/gamed/gsp_if.h"  // содержит только перечисление CHAT каналов
+#include <cstdio>
+#include <cstdlib>
+#include "libs.h"
+#include "gdeliveryd/countrybattleman.h"
 
-////////////////
-// Объявления //
-////////////////
+// int __cdecl GNET::CountryBattleMan::ArrangeCountry(CountryBattleMan *const this, bool has_major_str)
+// gdeliveryd + 0x083517AA
+// 55 89 E5 53 83 EC 24 8B 45 ? 88 45 ? C7 45
 
-/**
- *  Вызов функции
- */
-typedef bool (*SystemChatMsg_t)(const void *msg, size_t size, char channel, const void *data, size_t dsize);    // 1. Прототип функции
-SystemChatMsg_t g_ptrSystemChatMsg;                                                                             // 2. Указатель на оригинальную функцию
-bool SystemChatMsg(const void *msg, size_t size, char channel, const void *data = nullptr, size_t dsize = 0);   // 3. Обертка для удобства (можно и без нее)
+LIBDETOUR_DECL_TYPE(int, ArrangeCountry, const GNET::CountryBattleMan *, bool);
+libdetour_ArrangeCountry_t g_ptrArrangeCountry;
+int Hook_ArrangeCountry(const GNET::CountryBattleMan *_this, bool has_major_str);
+libdetour_ctx_t g_ctxArrangeCountry;
 
-/**
- *  Хук функции
- */
-LIBDETOUR_DECL_TYPE(void, DeliverItem, void *, unsigned int, const void *, unsigned int);                       // 1. Прототип функции (макрос уже реализован в libdetour для удобства)
-libdetour_DeliverItem_t g_ptrDeliverItem;                                                                       // 2. Указатель на оригинальную функцию
-void Hook_DeliverItem(void *pTask, unsigned int ulTask, const void *wi, unsigned int ulMulti);                  // 3. "каллбэк"
-libdetour_ctx_t g_ctxDeliverItem;                                                                               // 4. Контекст хука
-
-/////////////////////////
-// Управление плагином //
-/////////////////////////
-
-/**
- *  Точка входа плагина / Старт плагина
- */
 __attribute__ ((constructor)) void init()
 {
-    // Получим указатель на функцию отправки сообщения в системный чат
-    // GMSV::SystemChatMsg (gs + 0x84BFBCE)
-    g_ptrSystemChatMsg = reinterpret_cast<SystemChatMsg_t>(
+    // gdeliveryd + 0x083517AA
+    g_ptrArrangeCountry = reinterpret_cast<libdetour_ArrangeCountry_t>(
         GetFuncPtr(
-            "gs",                                                               // Модуль 
-            "55 89 E5 53 83 EC 54 8B 45 ? 88 45 ? 83 EC 0C 8D 45"               // Сигнатура
+            "gdeliveryd",
+            "55 89 E5 53 83 EC 24 8B 45 ? 88 45 ? C7 45"
         )
     );
 
-    // Получим указатель на функцию доставки предмета для дальнейшего хука
-    // _DeliverItem (libtask.so + 0x26A16)
-    g_ptrDeliverItem = reinterpret_cast<libdetour_DeliverItem_t>(
-        GetFuncPtr(
-            "libtask.so",                                                       // Модуль
-            "55 89 E5 53 81 EC 24 04 00 00 E8 ? ? ? ? 5B 81 C3 2B 72 03 00"     // Сигнатура
-        )
-    );
-
-    // Инициализируем хук
     libdetour_init(
-        &g_ctxDeliverItem,                                                      // Контекст хука
-        reinterpret_cast<void *>(g_ptrDeliverItem),                             // Указатель на оригинальную функцию
-        reinterpret_cast<void *>(&Hook_DeliverItem)                             // Указатель на нашу функцию (каллбэк)
+        &g_ctxArrangeCountry,
+        reinterpret_cast<void *>(g_ptrArrangeCountry),
+        reinterpret_cast<void *>(&Hook_ArrangeCountry)
     );
-    
-    // Активируем хук
-    libdetour_add(&g_ctxDeliverItem);
+    libdetour_add(&g_ctxArrangeCountry);
 }
 
-/**
- *  Точка выхода плагина
- */
 __attribute__ ((destructor)) void fini()
 {
-    // Если хук активен
-    if (g_ctxDeliverItem.detoured)
+    if (g_ctxArrangeCountry.detoured)
     {
-        // Отключим хук
-        libdetour_del(&g_ctxDeliverItem);
+        libdetour_del(&g_ctxArrangeCountry);
     }
 }
 
-////////////
-// "Тело" //
-////////////
-
 /**
- *  Обертка над функцией отправки сообщения в системный чат
+ * Рачитывает сторону игрока / группы на внутрисерверном БД.
+ *
+ * Счисление в массивах идет с 0, а результат функции (и далее) с 1.
+ * Другими словами, мы должны вернуть `индекс_массива + 1`
+ *
+ * Стороны:
+ * - 1  Вонг    Справа
+ * - 2  Лун     Снизу
+ * - 3  Найт    Слева
+ * - 4  Утгард  Сверху
+ *
+ * @param _this             класс менеджера
+ * @param has_major_str     имеет ли доминирующую силу (?)
+ *
+ * @return ID стороны (индекс массива + 1)
  */
-bool SystemChatMsg(const void *msg, size_t size, char channel, const void *data, size_t dsize)
+int Hook_ArrangeCountry(const GNET::CountryBattleMan *_this, bool has_major_str)
 {
-    // Просто вызываем по указателю, передавая все аргументы и получая результат.
-    return g_ptrSystemChatMsg(msg, size, channel, data, dsize);
-}
+    // Выберем нужные стороны (Вонг и Найт)
+    constexpr int ids[2] = {1, 3};
 
-/**
- *  Хук функции доставки предмета
- */
-void Hook_DeliverItem(void *pTask, unsigned int ulTask, const void *wi, unsigned int ulMulti)
-{
-    // Вызовем сначала оригинал, он должен быть в приоретете если у нас что-то пойдет не так
-    LIBDETOUR_ORIG_CALL(&g_ctxDeliverItem, DeliverItem, pTask, ulTask, wi, ulMulti);
+    // Извлечем кол-во игроков онлайн на этих сторонах
+    const int online[2] = {
+        _this->_country_info[ids[0] - 1].online_player_cnt,
+        _this->_country_info[ids[1] - 1].online_player_cnt
+    };
 
-    // Сундук вызывает квест с ID == 43562
-    if (ulTask == 43562)
+    // Если онлайн одинаковый, то выберем рандомом
+    if (online[0] == online[1])
     {
-        // Отправляем сообщение в системный чат
-        char16_t msg[] = u"^FFFF00Кто-то открыл cундук!";
-        SystemChatMsg(msg, sizeof(msg), GMSV::CHAT_CHANNEL_BROADCAST);
+        return ids[rand() % 2];
     }
+
+    // Иначе отправим туда, где онлайн меньше
+    return online[0] < online[1] ? ids[0] : ids[1];
 }
